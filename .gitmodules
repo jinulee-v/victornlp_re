@@ -1,0 +1,3 @@
+[submodule "victornlp_re/victornlp_utils"]
+	path = victornlp_re/victornlp_utils
+	url = https://github.com/jinulee-v/victornlp_utils.git

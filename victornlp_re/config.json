@@ -1,0 +1,118 @@
+{
+  "language": {
+    "korean": {
+      "corpus": {
+        "train": "corpus/VictorNLP_kor()_train.json",
+        "dev": "corpus/VictorNLP_kor()_dev.json",
+        "test": "corpus/VictorNLP_kor()_test.json",
+        "labels": "corpus/VictorNLP_kor()_labels.json"
+      },
+      "embedding": ["etri-korbert"],
+      "preprocessors": ["word-count"],
+      "run": {
+      }
+    },
+    "english": {
+      "corpus": {
+        "train": "corpus/VictorNLP_eng()_train.json",
+        "dev": "corpus/VictorNLP_eng()_dev.json",
+        "test": "corpus/VictorNLP_eng()_test.json",
+        "labels": "corpus/VictorNLP_eng()_labels.json"
+      },
+      "embedding": ["etri-korbert"],
+      "preprocessors": ["word-count"],
+      "run": {
+      }
+    }
+  },
+  "embedding": {
+    "kobert": {
+      "train": 0,
+      "special_tokens": {
+        "bos": "[CLS]"
+      }
+    },
+    "pos-wp-kor": {
+      "file_directory": "victornlp_sentiment/victornlp_utils/embedding/data/EmbeddingPoS_kor.json",
+      "key": "pos_tag",
+      "from_pretrained": 0,
+      "embed_size": 50,
+      "train": 1,
+      "special_tokens": {
+        "unk": "<unk>",
+        "bos": "<bos>",
+        "pad": "<pad>"
+      }
+    },
+    "glove-wp-kor": {
+      "file_directory": "victornlp_sentiment/victornlp_utils/embedding/data/EmbeddingGloVe_kor.json",
+      "key": "joined",
+      "from_pretrained": 1,
+      "train": 0,
+      "special_tokens": {
+        "unk": "<unk>",
+        "bos": "<bos>",
+        "pad": "<BLK>"
+      }
+    },
+    "etri-korbert": {
+      "file_directory": "victornlp_sentiment/victornlp_utils/embedding/data/EmbeddingBERTMorph_kor",
+      "word_phrase": 1,
+      "train": 0,
+      "special_tokens": {
+        "unk": "<unk>",
+        "bos": "<bos>"
+      }
+    },
+    "bert-base-uncased": {
+      "train": 0,
+      "special_tokens": {
+        "bos": "[CLS]"
+      }
+    },
+    "pos-eng": {
+      "file_directory": "victornlp_sentiment/victornlp_utils/embedding/data/EmbeddingPoS_eng.json",
+      "key": "pos_tag",
+      "from_pretrained": 0,
+      "embed_size": 50,
+      "train": 1,
+      "special_tokens": {
+        "unk": "<unk>",
+        "bos": "<bos>",
+        "pad": "<pad>"
+      }
+    },
+    "glove-eng": {
+      "file_directory": "victornlp_sentiment/victornlp_utils/embedding/data/EmbeddingGloVe_eng.json",
+      "key": "text",
+      "from_pretrained": 1,
+      "train": 0,
+      "special_tokens": {
+        "unk": "<unk>",
+        "bos": "<bos>",
+        "pad": "<pad>"
+      }
+    }
+  },
+  "model": {
+    "tree-lstm": {
+      "hidden_size": 512
+    }
+  },
+  "train": {
+    "language": "korean",
+    "model": "tree-lstm",
+    "loss_fn": "local-xbce",
+    "run_fn": "run_sentiment",
+    "epoch": 100,
+    "batch_size": 64,
+    "optimizer": "adam",
+    "learning_rate": 0.001,
+    "device": "cuda:0",
+    "early_stopping": {
+      "patience": 3,
+      "eps": 0.0,
+      "maximize": 0
+    }
+  }
+}
