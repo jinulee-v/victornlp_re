@@ -15,3 +15,5 @@ def register_model(name):
     re_model[name] = cls
     return cls
   return decorator
+
+from .MultiTaskRelExtract import *

@@ -14,3 +14,5 @@ def register_run_fn(name):
     re_run_fn[name] = fn
     return fn
   return decorator
+
+from .run_mtre import *

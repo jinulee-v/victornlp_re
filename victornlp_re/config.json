@@ -2,14 +2,15 @@
   "language": {
     "korean": {
       "corpus": {
-        "train": "corpus/VictorNLP_kor()_train.json",
-        "dev": "corpus/VictorNLP_kor()_dev.json",
-        "test": "corpus/VictorNLP_kor()_test.json",
-        "labels": "corpus/VictorNLP_kor()_labels.json"
+        "train": "corpus/VictorNLP_kor(KAISTre)_ds.json",
+        "dev": "corpus/VictorNLP_kor(KAISTre)_golden.json",
+        "test": "corpus/VictorNLP_kor(KAISTre)_test.json",
+        "labels": "corpus/VictorNLP_kor(KAISTre)_labels.json"
       },
       "embedding": ["etri-korbert"],
       "preprocessors": ["word-count"],
       "run": {
+        "top-k": 5
       }
     },
     "english": {
@@ -33,7 +34,7 @@
       }
     },
     "pos-wp-kor": {
-      "file_directory": "victornlp_sentiment/victornlp_utils/embedding/data/EmbeddingPoS_kor.json",
+      "file_directory": "victornlp_re/victornlp_utils/embedding/data/EmbeddingPoS_kor.json",
       "key": "pos_tag",
       "from_pretrained": 0,
       "embed_size": 50,
@@ -45,7 +46,7 @@
       }
     },
     "glove-wp-kor": {
-      "file_directory": "victornlp_sentiment/victornlp_utils/embedding/data/EmbeddingGloVe_kor.json",
+      "file_directory": "victornlp_re/victornlp_utils/embedding/data/EmbeddingGloVe_kor.json",
       "key": "joined",
       "from_pretrained": 1,
       "train": 0,
@@ -56,7 +57,7 @@
       }
     },
     "etri-korbert": {
-      "file_directory": "victornlp_sentiment/victornlp_utils/embedding/data/EmbeddingBERTMorph_kor",
+      "file_directory": "victornlp_re/victornlp_utils/embedding/data/EmbeddingBERTMorph_kor",
       "word_phrase": 1,
       "train": 0,
       "special_tokens": {
@@ -71,7 +72,7 @@
       }
     },
     "pos-eng": {
-      "file_directory": "victornlp_sentiment/victornlp_utils/embedding/data/EmbeddingPoS_eng.json",
+      "file_directory": "victornlp_re/victornlp_utils/embedding/data/EmbeddingPoS_eng.json",
       "key": "pos_tag",
       "from_pretrained": 0,
       "embed_size": 50,
@@ -83,7 +84,7 @@
       }
     },
     "glove-eng": {
-      "file_directory": "victornlp_sentiment/victornlp_utils/embedding/data/EmbeddingGloVe_eng.json",
+      "file_directory": "victornlp_re/victornlp_utils/embedding/data/EmbeddingGloVe_eng.json",
       "key": "text",
       "from_pretrained": 1,
       "train": 0,
@@ -95,15 +96,23 @@
     }
   },
   "model": {
-    "tree-lstm": {
-      "hidden_size": 512
+    "mtre-sentence": {
+      "gru_hidden_size": 128,
+      "gru_layers": 2,
+      "dependency_arc_size": 128,
+      "dependency_dropout": 0.2,
+      "entity_type_size": 128,
+      "gcn_hidden_size": 128,
+      "gcn_layers": 3,
+      "relation_type_size": 96
     }
   },
   "train": {
     "language": "korean",
-    "model": "tree-lstm",
-    "loss_fn": "local-xbce",
-    "run_fn": "run_sentiment",
+    "model": "mtre-sentence",
+    "loss_fn": "mtre-sentence-pretrain",
+    "run_fn": "mtre",
+    "analysis_fn": "mtre",
     "epoch": 100,
     "batch_size": 64,
     "optimizer": "adam",

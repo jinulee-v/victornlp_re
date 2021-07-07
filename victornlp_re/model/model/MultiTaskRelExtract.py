@@ -5,20 +5,32 @@ Implements MTRE model that encorporates dependency parsing and entity type label
 > Kai, Z. et al.(2019) Multi-Task Learning for Relation Extraction.
 """
 
+import re
+
 import torch
 import torch.nn as nn
 
 from . import register_model
 
-from ...victornlp_utils.module import ChildSumTreeLSTM
+from ...victornlp_utils.module import BilinearAttention, GCN
 
-@register_model('mtre')
-class MultiTaskRelExtract(nn.Module):
+@register_model('mtre-sentence')
+class MultiTaskRelExtract_Sentence(nn.Module):
   """
   @class MultiTaskRelExtract
 
   Multi-task model for Relation Extraction.
   Encorporates DP and entity type labeling as an auxiliary task.
+
+  NOTE that 'bag' concept is not necessarily present in every relation-extraction datasets.
+  We do not implement bag-wise attention, but only intra-sentence attention with MLP.
+
+  For Entity Type Labeling,
+  - This model tries to classify every named entity provided within the sentence.
+  - This model implements multi-class classification, regularized with mean/standard deviation.
+
+  For Relation Extractor,
+  - This model exploits predicate/subject's embedding and the attentive context vector.
   """
 
   def __init__(self, embeddings, labels, config):
@@ -27,10 +39,10 @@ class MultiTaskRelExtract(nn.Module):
     
     @param self The object pointer.
     @param embeddings List of Embedding-like objects. Refer to 'embedding.py' for more details.
-    @param labels List of sts labels(strings)
-    @param config Dictionary config file accessed with 'TreeLSTMSTS' key.
+    @param labels Dictionary of lists.
+    @param config Dictionary config file accessed with 'mtre-sentence' key.
     """
-    super(TreeLSTMSTS, self).__init__()
+    super(MultiTaskRelExtract_Sentence, self).__init__()
 
     # Embedding layer
     self.embeddings = nn.ModuleList(embeddings)
@@ -38,57 +50,172 @@ class MultiTaskRelExtract(nn.Module):
     for embedding in embeddings:
       input_size += embedding.embed_size
     self.input_size = input_size
-    self.hidden_size = config['hidden_size']
-    self.classifier_size = config['classifier_size']
-    self.r_size = config['r_size']
 
-    # Model layer (Tree-LSTM Encoder)
-    self.encoder = ChildSumTreeLSTM(self.input_size, self.hidden_size)
+    # Bi-GRU encoder
+    self.gru_hidden_size = config['gru_hidden_size']
+    self.gru_layers = config['gru_layers']
+    self.encoder = nn.GRU(input_size=self.input_size, hidden_size=self.gru_hidden_size, num_layers=self.gru_layers, batch_first=True, bidirectional=True)
     
-    # Prediction layer
-    self.W_mul = nn.Linear(self.hidden_size, self.classifier_size)
-    self.W_diff = nn.Linear(self.hidden_size, self.classifier_size)
+    # Deep-Biaffine parser subunit
+    self.dp_arc_size = config['dependency_arc_size']
+    self.dp_dropout = config['dependency_dropout']
+    self.W_head = nn.Sequential(
+      nn.Linear(self.gru_hidden_size * 2, self.dp_arc_size),
+      nn.ReLU(),
+      nn.Dropout(self.dp_dropout)
+    )
+    self.W_dep = nn.Sequential(
+      nn.Linear(self.gru_hidden_size * 2, self.dp_arc_size),
+      nn.ReLU(),
+      nn.Dropout(self.dp_dropout)
+    )
+    self.dependency_attention = BilinearAttention(self.dp_arc_size, self.dp_arc_size, 1)
+
+    # Entity Type Classifier &
+    # Relation Extractor
+    """
+    NOTE: Different from original paper.
+    Refer to the docstring of this class for better description.
+    """
+    # - Entity Type Classifier
+    self.entity_type_size = config['entity_type_size']
+    self.etl_labels = labels['entity_type_labels'] # Entity Type Labels
+    self.etl_labels_stoi = {}
+    for i, label in enumerate(self.etl_labels):
+      self.etl_labels_stoi[label] = i
+    self.classifier = nn.Sequential(
+      nn.Linear(self.gru_hidden_size * 2, self.entity_type_size),
+      nn.ReLU(),
+      nn.Linear(self.entity_type_size, len(self.etl_labels)),
+      nn.Sigmoid()
+    )
+
+    # - GCN layer
+    self.gcn_hidden_size = config['gcn_hidden_size']
+    self.gcn_layers = config['gcn_layers']
+    self.gcn = GCN(self.gru_hidden_size * 2, self.gcn_hidden_size, self.gcn_layers)
+
+    # - Attentive Context Vector
+    self.W_tok = nn.Linear(self.gcn_hidden_size, self.gcn_hidden_size)
+    self.q_query = nn.Parameter(torch.zeros(1, 1, self.gcn_hidden_size))
+
+    # - Prediction Layer
+    self.relation_type_size = config['relation_type_size']
+    self.re_labels = labels['relation_labels'] # Relation Type Labels
+    self.re_labels_stoi = {}
+    for i, label in enumerate(self.re_labels):
+      self.re_labels_stoi[label] = i
     self.prediction = nn.Sequential(
-      nn.Linear(self.classifier_size * 2, self.r_size),
-      nn.LogSoftmax(dim=1)
+      nn.Linear(self.gcn_hidden_size * 3, self.relation_type_size),
+      nn.ReLU(),
+      nn.Linear(self.relation_type_size, len(self.re_labels)),
+      nn.LogSoftmax()
     )
   
-  def run(self, inputs_a, inputs_b):
+  def run(self, inputs, pretrain=False, lengths=None, mask=None):
     """
     Runs the model and obtain softmax-ed distribution for each possible labels.
     
     @param self The object pointer.
-    @param inputs_a List of dictionaries. Refer to 'dataset.py' for more details.
-    @param inputs_b List of dictionaries(. Refer to 'dataset.py' for more details.
-    @return scores Tensor(batch, labels). scores[i][j] contains the log(probability) of i-th sentence in batch having j-th label.
+    @param inputs List of dictionaries. Refer to 'dataset.py' for more details.
+    @param pretrain If True, run the relation extraction module. If False, skip thos phases.
+    @return relations List, inputs[i]['relations'] flattened. len(relations) == total_relations.
+    @return relation_scores Tensor(total_relations, len(relation_labels)). Softmax-ed to obtain label probabilities.
+    @return arc_attention Tensor(batch, labels). scores[i][j] contains the log(probability) of i-th sentence in batch having j-th label.
+    @return entities List, inputs[i]['named_entities'] flattened. len(entities) == total_entities.
+    @return entity_type_scores Tensor(total_entities, len(type_labels)). Not softmaxed, but normalized to E(X)=0 / stddev(X)=1 for multi-class classification.
     """
-    batch_size = len(inputs_a)
+    batch_size = len(inputs)
+    if lengths is None:
+      lengths = torch.zeros(batch_size, dtype=torch.long).detach()
+      for i, input in enumerate(inputs):
+        lengths[i] = input['word_count'] + 1 # DP requires [ROOT] node; index 0 is given
+    else:
+      assert lengths.dim()==1 and lengths.size(0) == batch_size
+      lengths = lengths.detach()
     
     # Embedding
-    embedded_1 = []
-    embedded_2 = []
+    embedded = []
     for embedding in self.embeddings:
-      embedded_1.append(embedding(inputs_a))
-      embedded_2.append(embedding(inputs_b))
-    embedded_1 = torch.cat(embedded_1, dim=2)
-    embedded_2 = torch.cat(embedded_2, dim=2)
+      embedded.append(embedding(inputs))
+    embedded = torch.cat(embedded, dim=2)
     
-    # Run TreeLSTM and prediction
-    results_1 = []
-    results_2 = []
-    for i, tuple in enumerate(zip(inputs_a, inputs_b)):
-      hidden_state_1, _ = self.encoder(tuple[0]['dependency'], embedded_1[i], 0)
-      hidden_state_2, _ = self.encoder(tuple[1]['dependency'], embedded_2[i], 0)
-      results_1.append(hidden_state_1[0].unsqueeze(0))
-      results_2.append(hidden_state_2[0].unsqueeze(0)) # Pick only hidden state of the ROOT.
-    results_1 = torch.cat(results_1, dim=0)
-    results_2 = torch.cat(results_2, dim=0)
+    # Run GRU encoder first
+    gru_output, _ = self.encoder(embedded)
 
-    # results: Tensor(batch_size, hidden_size)
-    h_mul = results_1 * results_2
-    h_diff = torch.abs(results_1 - results_2)
-    h_s = torch.sigmoid(torch.cat((self.W_mul(h_mul), self.W_diff(h_diff)), dim=1))
-    p_hat = self.prediction(h_s)
-    # p_hat: Tensor(batch_size, r_size)
+    # Dependency parser
+    head_vectors = self.W_head(gru_output)
+    dep_vectors = self.W_dep(gru_output)
+    arc_attention = self.dependency_attention(head_vectors, dep_vectors, lengths)
+    if mask is None:
+      mask = torch.zeros_like(arc_attention).detach()
+      for i, length in enumerate(lengths):
+        for j in range(1, length):
+          mask[i, 0, j, :length] = 1
+    else:
+      assert mask.size()==arc_attention.size()
+      mask = mask.detach()
+  
+    arc_attention = arc_attention - ((1-mask) * 100000)
+    arc_attention = nn.functional.log_softmax(arc_attention, 3)
 
-    return p_hat
+    # Entity Type Labeling
+    entities = []
+    entity_embeddings = []
+    entity_embeddings_index = []
+    for i, input in enumerate(inputs):
+      for entity in input['named_entity']:
+        entities.append(entity)
+        entity_embeddings_index.append([])
+
+        # Find all indices of spaces
+        space_indices = [m.start() for m in re.finditer(' ', input['text'])]
+        assert len(space_indices) + 1 == input['word_count']
+        for m_i, m in enumerate(space_indices):
+          if entity['end'] <= m:
+            entity_embeddings.append(gru_output[i, m_i + 1].unsqueeze(0)) # +1 is for extra ROOT at the beginning
+            entity_embeddings_index[-1].append(m_i)
+    entity_embeddings = torch.cat(entity_embeddings, dim=0)
+    # entity_embeddings: Tensor(total_entities, 2*gru_hidden_size)
+    entity_type_scores = self.classifier(entity_embeddings)
+    # entity_type_scores: Tensor(total_entities, len(entity_type_labels))
+    entity_type_scores = (entity_type_scores - torch.mean(entity_type_scores, dim=1, keepdim=True)) / torch.std(entity_type_scores, dim=1, keepdim=True)
+
+    # Relation Extraction
+    if not pretrain:
+      relations = []
+      subject_embeddings = []
+      predicate_embeddings = []
+      context_embeddings = []
+
+      # GCN-contextualized embeddings
+      gcn_output = self.gcn(torch.exp(arc_attention.squeeze(1)), gru_output)
+
+      # Token-wise contextualized embeddings
+      token_wise_attention = torch.sum(self.W_tok(gcn_output) * self.q_query, dim=2, keepdim=True)
+      # token_wise_attention: Tensor(batch, length, 1)
+      mask_attention = mask[:, 0, :, 0].unsqueeze(2)
+      # mask_attention: Tensor(batch, length, 1) ; effects of the dummy ROOT is removed
+      context_vector = torch.sum(gcn_output * token_wise_attention * mask_attention, dim=1)
+      # context_vector: Tensor(batch, gcn_hidden)
+
+      # Prediction
+      for i, input in enumerate(inputs):
+        for relation in input['relation']:
+          relations.append(relation)
+          subject_embeddings.append(gcn_output[i, entity_embeddings_index[i][relation['subject']]].unsqueeze(0))
+          predicate_embeddings.append(gcn_output[i, entity_embeddings_index[i][relation['predicate']]].unsqueeze(0))
+          context_embeddings.append(context_vector[i].unsqueeze(0))
+      subject_embeddings = torch.cat(subject_embeddings, dim=0)
+      predicate_embeddings = torch.cat(predicate_embeddings, dim=0)
+      context_embeddings = torch.cat(context_embeddings, dim=0)
+
+      prediction_input = torch.cat([subject_embeddings, predicate_embeddings, context_embeddings], dim=1)
+
+      relation_scores = self.prediction(prediction_input)
+    else:
+      relations = None
+      relation_scores = None
+        
+
+    return relations, relation_scores, arc_attention, entities, entity_type_scores

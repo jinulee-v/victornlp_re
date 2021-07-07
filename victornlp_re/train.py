@@ -135,7 +135,7 @@ def main():
   with open(test_path) as test_corpus_file:
     test_dataset = VictorNLPDataset(json.load(test_corpus_file), preprocessors)
   with open(labels_path) as type_label_file:
-    type_label = json.load(type_label_file)['re_labels']
+    type_label = json.load(type_label_file)
 
   # Split dev datasets
   if dev_path:
@@ -172,7 +172,7 @@ def main():
   loss_fn = re_loss_fn[train_config['loss_fn']]
   optimizer = optimizers[train_config['optimizer']](model.parameters(), train_config['learning_rate'])
   run_fn = re_run_fn[train_config['run_fn']]
-  accuracy = re_analysis_fn['accuracy']
+  accuracy = re_analysis_fn[train_config['analysis_fn']]
 
   # Early Stopping settings
   if dev_dataset:

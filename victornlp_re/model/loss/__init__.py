@@ -15,3 +15,5 @@ def register_loss_fn(name):
     re_loss_fn[name] = fn
     return fn
   return decorator
+
+from .loss_mtre_sentence import *

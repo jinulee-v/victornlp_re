@@ -1,0 +1,4 @@
+corpus/
+models/
+victornlp_re/victornlp_re.egg-info/
+__pycache__
