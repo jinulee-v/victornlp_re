@@ -19,9 +19,11 @@ def analyze_mtre_basic(inputs):
   
   etl_correct = 0
   etl_total = 0
+  etl_labels = {}
   
   re_correct = 0
   re_total = 0
+  re_labels = {}
 
   for input in inputs:
     # UAS
@@ -40,15 +42,47 @@ def analyze_mtre_basic(inputs):
       for predict in entity['label_predict']:
         if predict in entity['label']:
           etl_correct += 1
+        if predict not in etl_labels:
+          etl_labels[predict] = 0
+        etl_labels[predict] += 1
+    
+    # Relation Extraction
+    for relation in input['relation']:
+      if 'label' in relation and 'label_predict' in relation:
+        re_total += 1
+
+        if relation['label_predict'] not in re_labels:
+          re_labels[relation['label_predict']] = 0
+        re_labels[relation['label_predict']] += 1
+
+        if relation['label'] == relation['label_predict']:
+          re_correct += 1
 
   dp_uas = dp_correct / dp_total * 100
   etl_recovery = etl_correct / etl_total * 100
 
-  return {
-    'UAS': round(dp_uas, 2),
-    'entity_type_label': {
-      'recovery': round(etl_recovery, 2)
+  if re_total > 0:
+    re_acc = re_correct / re_total * 100
+
+    return {
+      'dependency': {
+        'UAS': round(dp_uas, 2)
+      },
+      'entity_type_label': {
+        'recovery': round(etl_recovery, 2)
+      },
+      'relation_extraction': {
+        'accuracy': round(re_acc, 2)
+      }
     }
-  }
+  else:
+    return {
+      'dependency': {
+        'UAS': round(dp_uas, 2)
+      },
+      'entity_type_label': {
+        'recovery': round(etl_recovery, 2)
+      }
+    }
 
 

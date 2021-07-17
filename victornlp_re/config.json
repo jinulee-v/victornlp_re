@@ -4,6 +4,7 @@
       "corpus": {
         "train": "corpus/VictorNLP_kor(KAISTre)_ds.json",
         "dev": "corpus/VictorNLP_kor(KAISTre)_golden.json",
+        "train_dev_ratio": 0.8,
         "test": "corpus/VictorNLP_kor(KAISTre)_test.json",
         "labels": "corpus/VictorNLP_kor(KAISTre)_labels.json"
       },
@@ -103,20 +104,20 @@
       "dependency_dropout": 0.2,
       "entity_type_size": 128,
       "gcn_hidden_size": 128,
-      "gcn_layers": 3,
-      "relation_type_size": 96
+      "gcn_layers": 1,
+      "relation_type_size": 160
     }
   },
   "train": {
     "language": "korean",
     "model": "mtre-sentence",
-    "loss_fn": "mtre-sentence-pretrain",
-    "run_fn": "mtre",
+    "loss_fn": "mtre-sentence",
+    "run_fn": "mtre-sentence",
     "analysis_fn": "mtre",
     "epoch": 100,
     "batch_size": 64,
     "optimizer": "adam",
-    "learning_rate": 0.001,
+    "learning_rate": 0.005,
     "device": "cuda:0",
     "early_stopping": {
       "patience": 3,

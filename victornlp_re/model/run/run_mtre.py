@@ -49,8 +49,7 @@ def parse_greedy(arc_attention, inputs, config, **kwargs):
   
   return inputs
 
-
-@register_run_fn('mtre')
+@register_run_fn('mtre-sentence-pretrain')
 def run_mtre(model, inputs, config, **kwargs):
   device = next(model.parameters()).device
   batch_size = len(inputs)
@@ -70,7 +69,37 @@ def run_mtre(model, inputs, config, **kwargs):
     else:
       key = 'label'
     entity[key] = [model.etl_labels[l_i] for l_i in top_k[i].tolist()]
+
+  return inputs
+
+@register_run_fn('mtre-sentence')
+def run_mtre(model, inputs, config, **kwargs):
+  device = next(model.parameters()).device
+  batch_size = len(inputs)
   
-  # TODO Relation labeling
+  # FIXME
+  kwargs['pretrain'] = False
+
+  relations, relation_scores, arc_attention, entities, entity_type_scores = model.run(inputs, **kwargs)
+
+  inputs = parse_greedy(arc_attention, inputs, config, **kwargs)
+
+  # Entity type labeling
+  _, top_k = torch.topk(entity_type_scores, config['top-k'], dim=1)
+  for i, entity in enumerate(entities):
+    if 'label' in entity:
+      key = 'label_predict'
+    else:
+      key = 'label'
+    entity[key] = [model.etl_labels[l_i] for l_i in top_k[i].tolist()]
+  
+  # Relation labeling
+  _, relation_max = torch.max(relation_scores, dim=1)
+  for relation, relation_id in zip(relations, relation_max):
+    if 'label' in relation:
+      key = 'label_predict'
+    else:
+      key = 'label'
+    relation[key] = model.re_labels[relation_id]
 
   return inputs

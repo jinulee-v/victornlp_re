@@ -97,7 +97,7 @@ class MultiTaskRelExtract_Sentence(nn.Module):
 
     # - Attentive Context Vector
     self.W_tok = nn.Linear(self.gcn_hidden_size, self.gcn_hidden_size)
-    self.q_query = nn.Parameter(torch.zeros(1, 1, self.gcn_hidden_size))
+    self.q_query = nn.Parameter(torch.randn(1, 1, self.gcn_hidden_size))
 
     # - Prediction Layer
     self.relation_type_size = config['relation_type_size']
@@ -169,12 +169,12 @@ class MultiTaskRelExtract_Sentence(nn.Module):
         entity_embeddings_index.append([])
 
         # Find all indices of spaces
-        space_indices = [m.start() for m in re.finditer(' ', input['text'])]
-        assert len(space_indices) + 1 == input['word_count']
+        space_indices = [m.start() for m in re.finditer(' ', input['text'])] + [len(input['text'])]
+        assert len(space_indices) == input['word_count']
         for m_i, m in enumerate(space_indices):
           if entity['end'] <= m:
             entity_embeddings.append(gru_output[i, m_i + 1].unsqueeze(0)) # +1 is for extra ROOT at the beginning
-            entity_embeddings_index[-1].append(m_i)
+            entity_embeddings_index[i].append(m_i + 1)
     entity_embeddings = torch.cat(entity_embeddings, dim=0)
     # entity_embeddings: Tensor(total_entities, 2*gru_hidden_size)
     entity_type_scores = self.classifier(entity_embeddings)
@@ -189,23 +189,25 @@ class MultiTaskRelExtract_Sentence(nn.Module):
       context_embeddings = []
 
       # GCN-contextualized embeddings
-      gcn_output = self.gcn(torch.exp(arc_attention.squeeze(1)), gru_output)
+      gcn_output = self.gcn(torch.exp(arc_attention.squeeze(1).transpose(1, 2)), gru_output)
 
       # Token-wise contextualized embeddings
       token_wise_attention = torch.sum(self.W_tok(gcn_output) * self.q_query, dim=2, keepdim=True)
       # token_wise_attention: Tensor(batch, length, 1)
       mask_attention = mask[:, 0, :, 0].unsqueeze(2)
       # mask_attention: Tensor(batch, length, 1) ; effects of the dummy ROOT is removed
-      context_vector = torch.sum(gcn_output * token_wise_attention * mask_attention, dim=1)
+      context_vector = torch.sum(gcn_output * torch.softmax(token_wise_attention, dim=1) * mask_attention, dim=1)
       # context_vector: Tensor(batch, gcn_hidden)
 
       # Prediction
       for i, input in enumerate(inputs):
         for relation in input['relation']:
           relations.append(relation)
+          
           subject_embeddings.append(gcn_output[i, entity_embeddings_index[i][relation['subject']]].unsqueeze(0))
           predicate_embeddings.append(gcn_output[i, entity_embeddings_index[i][relation['predicate']]].unsqueeze(0))
           context_embeddings.append(context_vector[i].unsqueeze(0))
+
       subject_embeddings = torch.cat(subject_embeddings, dim=0)
       predicate_embeddings = torch.cat(predicate_embeddings, dim=0)
       context_embeddings = torch.cat(context_embeddings, dim=0)

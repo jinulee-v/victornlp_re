@@ -60,7 +60,7 @@ def loss_MTRE_sentence_pretrain(model, inputs, **kwargs):
   # Apply Normalized-Hinge loss for Entity Type Labeling.
   entity_type_loss = torch.zeros(1, device=device)
   count = 0
-  for e_i, (entity, score) in enumerate(zip(entities, entity_type_scores)):
+  for e_i, entity in enumerate(entities):
     for label in entity['label']:
       if label in model.etl_labels:
         score = entity_type_scores[e_i][model.etl_labels_stoi[label]]
@@ -68,7 +68,7 @@ def loss_MTRE_sentence_pretrain(model, inputs, **kwargs):
         count += 1
   entity_type_loss /= count
 
-  return dp_loss + entity_type_loss
+  return dp_loss + entity_type_loss * 2
 
 
 @register_loss_fn('mtre-sentence')
@@ -89,19 +89,19 @@ def loss_MTRE_sentence(model, inputs, **kwargs):
   # Apply Normalized-Hinge loss for Entity Type Labeling.
   entity_type_loss = torch.zeros(1, device=device)
   count = 0
-  for e_i, (entity, score) in enumerate(zip(entities, entity_type_scores)):
+  for e_i, entity in enumerate(entities):
     for label in entity['label']:
       if label in model.etl_labels:
-        score = score[model.etl_labels_stoi[label]]
-        entity_type_loss += torch.max(0, 1-score)
+        score = entity_type_scores[e_i][model.etl_labels_stoi[label]]
+        entity_type_loss += torch.max(torch.zeros(1, device=device), 3-score)
         count += 1
   entity_type_loss /= count
   
   # Apply NLL loss for Relation Extraction.
   # Generate label
-  re_golden = torch.zeros(len(relations), dtype=torch.long)
+  re_golden = torch.zeros(len(relations), dtype=torch.long, device=device)
   for r_i, relation in enumerate(relations):
     re_golden[r_i] = model.re_labels_stoi[relation['label']]
-  re_loss = F.nll_loss(relation_scores, re_golden, reduction='batchmean')
+  re_loss = F.nll_loss(relation_scores, re_golden, reduction='mean')
 
   return re_loss + (dp_loss + entity_type_loss) * 0.5
