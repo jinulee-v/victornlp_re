@@ -106,14 +106,21 @@
       "gcn_hidden_size": 128,
       "gcn_layers": 1,
       "relation_type_size": 160
+    },
+    "pruned-dependency": {
+      "lstm_hidden_size": 128,
+      "lstm_layers": 2,
+      "gcn_hidden_size": 128,
+      "gcn_layers": 3,
+      "relation_type_size": 160
     }
   },
   "train": {
     "language": "korean",
-    "model": "mtre-sentence",
-    "loss_fn": "mtre-sentence",
-    "run_fn": "mtre-sentence",
-    "analysis_fn": "mtre",
+    "model": "pruned-dependency",
+    "loss_fn": "nll",
+    "run_fn": "argmax",
+    "analysis_fn": "accuracy",
     "epoch": 100,
     "batch_size": 64,
     "optimizer": "adam",

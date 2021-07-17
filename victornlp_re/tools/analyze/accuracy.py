@@ -86,3 +86,36 @@ def analyze_mtre_basic(inputs):
     }
 
 
+@register_analysis_fn('accuracy')
+def analyze_accuracy(inputs):
+  """
+  Calculates UAS for DP; recovery for entity type labeling, and Accuracy for relation labeling.
+  
+  @param inputs List of dictionaries. Refer to 'dataset.py'' for more details.
+  
+  @return Dictionary with accuracy(total) and per-label in percentage(rounded for 4 digits).
+  """
+  re_correct = 0
+  re_total = 0
+  re_labels = {}
+
+  for input in inputs:
+    
+    # Relation Extraction
+    for relation in input['relation']:
+      if 'label' in relation and 'label_predict' in relation:
+        re_total += 1
+
+        if relation['label_predict'] not in re_labels:
+          re_labels[relation['label_predict']] = 0
+        re_labels[relation['label_predict']] += 1
+
+        if relation['label'] == relation['label_predict']:
+          re_correct += 1
+
+  re_acc = re_correct / re_total * 100
+
+  return {
+      'accuracy': round(re_acc, 2)
+  }
+

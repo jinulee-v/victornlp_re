@@ -16,3 +16,4 @@ def register_run_fn(name):
   return decorator
 
 from .run_mtre import *
+from .run_argmax import *

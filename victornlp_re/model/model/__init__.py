@@ -17,3 +17,4 @@ def register_model(name):
   return decorator
 
 from .MultiTaskRelExtract import *
+from .PrunedDependencyRelExtract import *

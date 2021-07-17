@@ -17,3 +17,4 @@ def register_loss_fn(name):
   return decorator
 
 from .loss_mtre_sentence import *
+from .loss_nll import *
