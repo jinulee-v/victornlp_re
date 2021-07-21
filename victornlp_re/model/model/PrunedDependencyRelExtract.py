@@ -14,6 +14,82 @@ from . import register_model
 
 from ...victornlp_utils.module import BilinearAttention, GCN
 
+def pruned_depedency_tree(tree, entity1, entity2, prune_k, size):
+  """
+  Generates bi-directional adjacency matrix of pruned dependency tree
+  out of the given dependency tree, span of both entities and the prune distance factor(hyperparameter)
+
+  @param tree List[Dictionary{'dep': X, 'head': X, ...}]. List of dependency arc information.
+  @param entity1 List[begin, end]. Token span information.
+  @param entity2 List[begin, end]. Token span information.
+  @param prune_k Integer. Prune distance. Refer to the original paper for any further definitions.
+  @param size Integer. Size of the generated adjacent matrix.
+  @return adj_matrix Tensor[size, size]. Symmetric adjacency matrix without an self-loop.
+  """
+  tree = [None] + tree
+
+  # Find Lowest Common Ancestor(LCA)
+  common_ancestors = None 
+  for i in list(range(entity1[0], entity1[1] + 1)) + list(range(entity2[0], entity2[1] + 1)):
+    ancestors = []
+    now = i
+    while tree[now] is not None:
+      ancestors.append(now)
+      assert now == tree[now]['dep']
+      # In case of infinity loop,
+      if tree[now]['head'] in ancestors:
+        break
+      now = tree[now]['head']
+    ancestors.append(0)
+
+    if common_ancestors is None:
+      common_ancestors = ancestors
+    else:
+      new_common_ancestors = []
+      for node in reversed(ancestors):
+        if node in common_ancestors:
+          new_common_ancestors.append(node)
+        else:
+          break
+      common_ancestors = new_common_ancestors
+  lca = common_ancestors[0]
+
+  # Add critical path
+  new_tree = [lca]
+  for i in list(range(entity1[0], entity1[1] + 1)) + list(range(entity2[0], entity2[1] + 1)):
+    assert tree[i]['dep'] == i
+    now = i
+    while now not in new_tree:
+      new_tree.append(now)
+      now = tree[now]['head']
+  
+  # Find auxiliary paths
+  NOT_VISITED = 1e6
+  distance = torch.ones(size) * NOT_VISITED
+  for node in new_tree:
+    distance[node] = 0
+  for i in range(1, prune_k + 1):
+    for arc in tree:
+      if arc is None:
+        continue
+      if arc['dep'] == i - 1 and arc['head'] == NOT_VISITED:
+        distance[arc['head']] = i
+        new_tree.append(arc['head'])
+      if arc['head'] == i - 1 and arc['dep'] == NOT_VISITED:
+        distance[arc['dep']] = i
+        new_tree.append(arc['dep'])
+  
+  # Generate adjacency matrix
+  adj_matrix = torch.zeros(size, size)
+  for node in new_tree:
+    if tree[node] is not None and distance[node] <= prune_k:
+      head = tree[node]['head']
+      dep = tree[node]['dep']
+      adj_matrix[dep, head] = 1
+      adj_matrix[head, dep] = 1
+  return adj_matrix
+
+
 @register_model('pruned-dependency')
 class PrunedDependencyRelExtract(nn.Module):
   """
@@ -32,6 +108,14 @@ class PrunedDependencyRelExtract(nn.Module):
     @param config Dictionary config file accessed with 'mtre-sentence' key.
     """
     super(PrunedDependencyRelExtract, self).__init__()
+
+    # Pruning value
+    # Infiinity(below 0): No pruning
+    # Positive integer >= 0: Pruning
+    # - 0: Only the dependency path
+    # - 1: Dependency path and its attached values
+    self.prune = (config['prune'] >= 0)
+    self.prune_k = config['prune'] if self.prune else 1e6
 
     # Embedding layer
     self.embeddings = nn.ModuleList(embeddings)
@@ -86,43 +170,7 @@ class PrunedDependencyRelExtract(nn.Module):
       lengths = kwargs['lengths']
       assert lengths.dim()==1 and lengths.size(0) == batch_size
       lengths = lengths.detach()
-    if 'mask' not in kwargs:
-      mask = torch.zeros(batch_size, 1, max_length, max_length, device=device).detach()
-      for i, length in enumerate(lengths):
-        for j in range(1, length):
-          mask[i, 0, j, :length] = 1
-    else:
-      mask = kwargs['mask']
-      assert mask.size(0) == batch_size and mask.size(2) == mask.size(3) == max_length
-      mask = mask.detach()
     
-    # Adjacent matrix and entity_embeddings_index
-    adj_matrix = torch.zeros(batch_size, max_length, max_length, device=device).detach()
-    entities = []
-    # entity_embeddings_index: List[ List[begin, end] -> named_entities ] -> batch
-    entity_embeddings_index = []
-
-    for i, input in enumerate(inputs):
-      assert 'dependency' in input and "Input must include golden dependency"
-      for arc in input['dependency']:
-        adj_matrix[i, arc['dep'], arc['head']] = 1
-
-      assert 'named_entity' in input
-      entity_embeddings_index.append([])
-      for entity in input['named_entity']:
-        entities.append(entity)
-        entity_embeddings_index[i].append([])
-
-        # Find all indices of spaces
-        space_indices = [m.start() for m in re.finditer(' ', input['text'])] + [len(input['text'])]
-        assert len(space_indices) == input['word_count']
-        for m_i, m in enumerate(space_indices):
-          if entity['begin'] >= m:
-            entity_embeddings_index[i][-1].append(m_i + 1)
-          if entity['end'] <= m:
-            entity_embeddings_index[i][-1].append(m_i + 1)
-
-
     # Embedding
     embedded = []
     for embedding in self.embeddings:
@@ -131,22 +179,85 @@ class PrunedDependencyRelExtract(nn.Module):
     
     # Run LSTM encoder first
     lstm_output, _ = self.encoder(embedded)
+    duplicated_lstm_output = []
 
-    # Relation Extraction
+    # Adjacent matrix and entity_embeddings_index
+    adj_matrices = []
+    entities = []
+    # entity_embeddings_index: List[ List[begin, end] -> named_entities ] -> batch
+    entity_embeddings_index = []
+
+    # relations
     relations = []
-    subject_embeddings = []
-    predicate_embeddings = []
-    context_embeddings = []
+    subj_index = []
+    pred_index = []
+
+    for i, input in enumerate(inputs):
+      assert 'named_entity' in input
+      # Find all indices of spaces
+      space_indices = [m.start() for m in re.finditer(' ', input['text'])] + [len(input['text'])]
+      # Find entity boundaries
+      entity_embeddings_index.append([])
+      for entity in input['named_entity']:
+        entities.append(entity)
+        entity_embeddings_index[i].append([1])
+
+        assert len(space_indices) == input['word_count']
+        for m_i, m in enumerate(space_indices):
+          # Largest m smaller than 'begin'
+          if entity['begin'] > m:
+            entity_embeddings_index[i][-1][0] = m_i + 1
+          # Smallest m larger than 'end'
+          if entity['end'] <= m and len(entity_embeddings_index[i][-1]) == 1:
+            entity_embeddings_index[i][-1].append(m_i + 1)
+        assert len(entity_embeddings_index[i][-1]) == 2
+
+      assert 'dependency' in input and "Input must include golden dependency"
+      assert 'relation' in input and "Input must include relation domain(subject and predicate)"
+
+      for rel in input['relation']:
+        relations.append(rel)
+
+        duplicated_lstm_output.append(lstm_output[i].unsqueeze(0))
+        subj_index.append(entity_embeddings_index[i][rel['subject']])
+        pred_index.append(entity_embeddings_index[i][rel['predicate']])
+        adj_matrices.append(
+          pruned_depedency_tree(
+            input['dependency'],
+            subj_index[-1],
+            pred_index[-1],
+            self.prune_k,
+            max_length
+          ).unsqueeze(0)
+        )
+    lstm_output = torch.cat(duplicated_lstm_output, dim=0)
+    adj_matrices = torch.cat(adj_matrices, dim=0).to(device)
+
+    # Define mask: select tokens only involved in the pruned depedency tree
+    mask = (torch.sum(adj_matrices, dim=2) > 0).float()
+    if 'mask' in kwargs:
+      # If mask is given, perform logical AND between two masks
+      mask_given = kwargs['mask']
+      duplicated_mask = []
+      for m, input in zip(mask_given, inputs):
+        for _ in range(len(input['relation'])):
+          duplicated_mask.append(m.unsqueeze(0))
+      mask_given = torch.cat(duplicated_mask, dim=0)
+
+      assert mask_given.size(0) == len(relations) and mask_given.size(1) ==  max_length
+      mask = mask_given.detach() * mask
+
+    mask = mask.unsqueeze(2)
 
     # GCN-contextualized embeddings
-    gcn_output = self.gcn(adj_matrix, lstm_output)
+    gcn_output = self.gcn(adj_matrices, lstm_output)
+    gcn_output -=  (1 - mask) * 1e6
 
     # Max-pooling to get sentence vector
-    mask = mask[:, 0, :, 0].unsqueeze(2)
-    context_vector, _ = torch.max(gcn_output, dim=1)
+    context_embeddings, _ = torch.max(gcn_output, dim=1)
     # context_vector: Tensor(batch, gcn_hidden)
 
-    # Max-pooling to get entity vector
+    # Max-pooling function to get entity vector
     def max_pool_entity_vec(batch, begin_end):
       """
       Max-pooling for entities from GCN output.
@@ -154,22 +265,20 @@ class PrunedDependencyRelExtract(nn.Module):
       @param begin_end List of two integers, indicating the begin and last word-phrase of the entity.
       @return entity_embedding Tensor[gcn_hidden_size]. Max-pooled entity embedding
       """
-      entity = gcn_output[i, begin_end[0]:begin_end[1] + 1]
+      entity = gcn_output[batch, begin_end[0] : begin_end[1] + 1]
       entity_embedding, _ = torch.max(entity, dim=0)
       return entity_embedding
 
-    # Prediction
-    for i, input in enumerate(inputs):
-      for relation in input['relation']:
-        relations.append(relation)
-        
-        subject_embeddings.append(max_pool_entity_vec(i, entity_embeddings_index[i][relation['subject']]).unsqueeze(0))
-        predicate_embeddings.append(max_pool_entity_vec(i, entity_embeddings_index[i][relation['predicate']]).unsqueeze(0))
-        context_embeddings.append(context_vector[i].unsqueeze(0))
+    # Extract subject and predicate embeddings
+    subject_embeddings = []
+    predicate_embeddings = []
+
+    for i, relation in enumerate(relations):
+      subject_embeddings.append(max_pool_entity_vec(i, subj_index[i]).unsqueeze(0))
+      predicate_embeddings.append(max_pool_entity_vec(i, pred_index[i]).unsqueeze(0))
 
     subject_embeddings = torch.cat(subject_embeddings, dim=0)
     predicate_embeddings = torch.cat(predicate_embeddings, dim=0)
-    context_embeddings = torch.cat(context_embeddings, dim=0)
 
     prediction_input = torch.cat([subject_embeddings, predicate_embeddings, context_embeddings], dim=1)
     

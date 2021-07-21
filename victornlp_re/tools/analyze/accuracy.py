@@ -116,6 +116,7 @@ def analyze_accuracy(inputs):
   re_acc = re_correct / re_total * 100
 
   return {
-      'accuracy': round(re_acc, 2)
+      'accuracy': round(re_acc, 2),
+      'label_occurence': re_labels
   }
 

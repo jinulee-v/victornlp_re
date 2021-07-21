@@ -25,6 +25,7 @@ def loss_nll(model, inputs, **kwargs):
   re_golden = torch.zeros(len(relations), dtype=torch.long, device=device)
   for r_i, relation in enumerate(relations):
     re_golden[r_i] = model.re_labels_stoi[relation['label']]
+  
   re_loss = F.nll_loss(relation_scores, re_golden, reduction='mean')
 
   return re_loss
