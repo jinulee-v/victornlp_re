@@ -3,12 +3,11 @@
     "korean": {
       "corpus": {
         "train": "corpus/VictorNLP_kor(KAISTre)_ds.json",
-        "dev": "corpus/VictorNLP_kor(KAISTre)_golden.json",
-        "train_dev_ratio": 0.8,
-        "test": "corpus/VictorNLP_kor(KAISTre)_test.json",
+        "train_dev_ratio": 0.9, 
+        "test": "corpus/VictorNLP_kor(KAISTre)_golden.json",
         "labels": "corpus/VictorNLP_kor(KAISTre)_labels.json"
       },
-      "embedding": ["etri-korbert"],
+      "embedding": ["glove-wp-kor", "pos-wp-kor"],
       "preprocessors": ["word-count"],
       "run": {
         "top-k": 5
@@ -108,23 +107,24 @@
       "relation_type_size": 160
     },
     "pruned-dependency": {
-      "lstm_hidden_size": 128,
+      "prune": 1,
+      "lstm_hidden_size": 256,
       "lstm_layers": 2,
-      "gcn_hidden_size": 128,
+      "gcn_hidden_size": 256,
       "gcn_layers": 3,
       "relation_type_size": 160
     }
   },
   "train": {
     "language": "korean",
-    "model": "pruned-dependency",
-    "loss_fn": "nll",
-    "run_fn": "argmax",
-    "analysis_fn": "accuracy",
+    "model": "mtre-sentence",
+    "loss_fn": "mtre-sentence",
+    "run_fn": "mtre-sentence",
+    "analysis_fn": "mtre",
     "epoch": 100,
     "batch_size": 64,
     "optimizer": "adam",
-    "learning_rate": 0.005,
+    "learning_rate": 0.003,
     "device": "cuda:0",
     "early_stopping": {
       "patience": 3,

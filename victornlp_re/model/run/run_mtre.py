@@ -50,7 +50,7 @@ def parse_greedy(arc_attention, inputs, config, **kwargs):
   return inputs
 
 @register_run_fn('mtre-sentence-pretrain')
-def run_mtre(model, inputs, config, **kwargs):
+def run_mtre_pretrain(model, inputs, config, **kwargs):
   device = next(model.parameters()).device
   batch_size = len(inputs)
   

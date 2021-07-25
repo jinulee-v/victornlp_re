@@ -33,6 +33,8 @@ def argparse_cmd_args() :
   parser.add_argument('--title', type=str)
   parser.add_argument('--language', type=str, help='language. Currently supported: {korean, english}')
   parser.add_argument('--model', choices=re_model.keys(), help='RE model. Choose model name from default config file.')
+  parser.add_argument('--loss-fn', choices=re_loss_fn.keys(), help='RE loss function.')
+  parser.add_argument('--run-fn', choices=re_run_fn.keys(), help='RE run function.')
   parser.add_argument('--embedding', '-e', type=str, choices=embeddings.keys(), nargs='?', action='append', help='Embedding class names.')
   parser.add_argument('--epoch', type=int, help='training epochs')
   parser.add_argument('--batch-size', type=int, help='batch size for training')

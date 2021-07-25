@@ -145,27 +145,26 @@ def main():
       logger.info('')
 
       # Run analysis functions
-      if not args.analyze:
-        return
-      analyzers = {name:re_analysis_fn[name] for name in args.analyze}
-      for analyzer in analyzers:
-        result = analyzer(dataset)
-        logger.info('-'*40)
-        logger.info(name)
-        if isinstance(result, dict):
-          # Dictionary results
-          for key, value in result.items():
-            logger.info('  {}: {}'.format(key, value))
-        else:
-          # Text results(TSV, pd.dataframe, ...)
-          logger.info('\n' + str(result))
-        logger.info('-'*40)
-        logger.info('')
+      if args.analyze:
+        analyzers = {name:re_analysis_fn[name] for name in args.analyze}
+        for analyzer in analyzers:
+          result = analyzer(dataset)
+          logger.info('-'*40)
+          logger.info(name)
+          if isinstance(result, dict):
+            # Dictionary results
+            for key, value in result.items():
+              logger.info('  {}: {}'.format(key, value))
+          else:
+            # Text results(TSV, pd.dataframe, ...)
+            logger.info('\n' + str(result))
+          logger.info('-'*40)
+          logger.info('')
 
       # Save result if needed
       if args.save_result:
-        with open(args.model_dir + 'parse_result_{}.log'.format(now), 'w') as out_file:
-          json.dump(inputs, out_file, indent=4)
+        with open(args.save_result if args.save_result else args.model_dir + 'parse_result_{}.json'.format(now), 'w') as out_file:
+          json.dump(dataset._data, out_file, indent=4, ensure_ascii=False)
 
     else:
       # From stdin
