@@ -28,12 +28,12 @@ def analyze_mtre_basic(inputs):
   for input in inputs:
     # UAS
     assert 'dependency' in input and 'dependency_predict' in input
-    assert len(input['dependency']) == len(input['dependency_predict'])
-    for arc_golden, arc_predict in zip(input['dependency'], input['dependency_predict']):
-      assert arc_golden['dep'] == arc_predict['dep']
-      dp_total += 1
-      if arc_golden['head'] == arc_predict['head']:
-        dp_correct += 1
+    for arc_golden in input['dependency']:
+      for arc_predict in input['dependency_predict']:
+        if arc_golden['dep'] == arc_predict['dep']:
+          dp_total += 1
+          if arc_golden['head'] == arc_predict['head']:
+            dp_correct += 1
     
     # Entity Type labeling
     for entity in input['named_entity']:

@@ -2,38 +2,20 @@
   "language": {
     "korean": {
       "corpus": {
-        "train": "corpus/VictorNLP_kor(KAISTre)_ds.json",
+        "train": "corpus/VictorNLP_kor(KAISTre_KMDP)_ds.json",
         "train_dev_ratio": 0.9, 
-        "test": "corpus/VictorNLP_kor(KAISTre)_golden.json",
-        "labels": "corpus/VictorNLP_kor(KAISTre)_labels.json"
+        "test": "corpus/VictorNLP_kor(KAISTre_KMDP)_golden.json",
+        "labels": "corpus/VictorNLP_kor(KAISTre_KMDP)_labels.json"
       },
-      "embedding": ["glove-wp-kor", "pos-wp-kor"],
+      "embedding": ["glove-morph-kor", "pos-morph-kor"],
       "preprocessors": ["word-count"],
       "run": {
         "top-k": 5
       }
-    },
-    "english": {
-      "corpus": {
-        "train": "corpus/VictorNLP_eng()_train.json",
-        "dev": "corpus/VictorNLP_eng()_dev.json",
-        "test": "corpus/VictorNLP_eng()_test.json",
-        "labels": "corpus/VictorNLP_eng()_labels.json"
-      },
-      "embedding": ["etri-korbert"],
-      "preprocessors": ["word-count"],
-      "run": {
-      }
     }
   },
   "embedding": {
-    "kobert": {
-      "train": 0,
-      "special_tokens": {
-        "bos": "[CLS]"
-      }
-    },
-    "pos-wp-kor": {
+    "pos-morph-kor": {
       "file_directory": "victornlp_re/victornlp_utils/embedding/data/EmbeddingPoS_kor.json",
       "key": "pos_tag",
       "from_pretrained": 0,
@@ -45,7 +27,7 @@
         "pad": "<pad>"
       }
     },
-    "glove-wp-kor": {
+    "glove-morph-kor": {
       "file_directory": "victornlp_re/victornlp_utils/embedding/data/EmbeddingGloVe_kor.json",
       "key": "joined",
       "from_pretrained": 1,
@@ -63,35 +45,6 @@
       "special_tokens": {
         "unk": "<unk>",
         "bos": "<bos>"
-      }
-    },
-    "bert-base-uncased": {
-      "train": 0,
-      "special_tokens": {
-        "bos": "[CLS]"
-      }
-    },
-    "pos-eng": {
-      "file_directory": "victornlp_re/victornlp_utils/embedding/data/EmbeddingPoS_eng.json",
-      "key": "pos_tag",
-      "from_pretrained": 0,
-      "embed_size": 50,
-      "train": 1,
-      "special_tokens": {
-        "unk": "<unk>",
-        "bos": "<bos>",
-        "pad": "<pad>"
-      }
-    },
-    "glove-eng": {
-      "file_directory": "victornlp_re/victornlp_utils/embedding/data/EmbeddingGloVe_eng.json",
-      "key": "text",
-      "from_pretrained": 1,
-      "train": 0,
-      "special_tokens": {
-        "unk": "<unk>",
-        "bos": "<bos>",
-        "pad": "<pad>"
       }
     }
   },
@@ -118,13 +71,13 @@
   "train": {
     "language": "korean",
     "model": "mtre-sentence",
-    "loss_fn": "mtre-sentence",
+    "loss_fn": "mtre-sentence-pretrain",
     "run_fn": "mtre-sentence",
     "analysis_fn": "mtre",
     "epoch": 100,
     "batch_size": 64,
     "optimizer": "adam",
-    "learning_rate": 0.003,
+    "learning_rate": 0.05,
     "device": "cuda:0",
     "early_stopping": {
       "patience": 3,

@@ -164,6 +164,7 @@ class MultiTaskRelExtract_Sentence(nn.Module):
     entity_embeddings = []
     entity_embeddings_index = []
     for i, input in enumerate(inputs):
+      # Find entity boundaries
       for entity in input['named_entity']:
         entities.append(entity)
         entity_embeddings_index.append([])
@@ -173,8 +174,9 @@ class MultiTaskRelExtract_Sentence(nn.Module):
         assert len(space_indices) == input['word_count']
         for m_i, m in enumerate(space_indices):
           if entity['end'] <= m:
-            entity_embeddings.append(gru_output[i, m_i + 1].unsqueeze(0)) # +1 is for extra ROOT at the beginning
-            entity_embeddings_index[i].append(m_i + 1)
+            last_morph_id = input['pos'][m_i][-1]['id']
+            entity_embeddings.append(gru_output[i, last_morph_id].unsqueeze(0)) # +1 is for extra ROOT at the beginning
+            entity_embeddings_index[i].append(last_morph_id)
     entity_embeddings = torch.cat(entity_embeddings, dim=0)
     # entity_embeddings: Tensor(total_entities, 2*gru_hidden_size)
     entity_type_scores = self.classifier(entity_embeddings)

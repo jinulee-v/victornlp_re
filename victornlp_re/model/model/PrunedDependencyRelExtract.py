@@ -26,13 +26,21 @@ def pruned_depedency_tree(tree, entity1, entity2, prune_k, size):
   @param size Integer. Size of the generated adjacent matrix.
   @return adj_matrix Tensor[size, size]. Symmetric adjacency matrix without an self-loop.
   """
-  tree = [None] + tree
+  # tree = [None] + tree
+  new_tree = [None] * size
+  for arc in tree:
+    new_tree[arc['dep']] = arc
+  tree = new_tree
 
   # Find Lowest Common Ancestor(LCA)
   common_ancestors = None 
   for i in list(range(entity1[0], entity1[1] + 1)) + list(range(entity2[0], entity2[1] + 1)):
     ancestors = []
     now = i
+    if i >= len(tree):
+      print(entity1, entity2)
+      print(i, len(tree), size)
+      raise ValueError()
     while tree[now] is not None:
       ancestors.append(now)
       assert now == tree[now]['dep']
@@ -57,6 +65,8 @@ def pruned_depedency_tree(tree, entity1, entity2, prune_k, size):
   # Add critical path
   new_tree = [lca]
   for i in list(range(entity1[0], entity1[1] + 1)) + list(range(entity2[0], entity2[1] + 1)):
+    if tree[i] is None:
+      continue
     assert tree[i]['dep'] == i
     now = i
     while now not in new_tree:
@@ -163,9 +173,10 @@ class PrunedDependencyRelExtract(nn.Module):
     if 'lengths' not in kwargs:
       lengths = torch.zeros(batch_size, dtype=torch.long, device=device).detach()
       for i, input in enumerate(inputs):
-        lengths[i] = input['word_count'] + 1 # DP requires [ROOT] node; index 0 is given
-        if max_length < input['word_count'] + 1:
-          max_length = input['word_count'] + 1
+        length = 1 + sum([len(wp) for wp in input['pos']])
+        lengths[i] = length # DP requires [ROOT] node; index 0 is given
+        if max_length < length:
+          max_length = length
     else:
       lengths = kwargs['lengths']
       assert lengths.dim()==1 and lengths.size(0) == batch_size
@@ -193,23 +204,34 @@ class PrunedDependencyRelExtract(nn.Module):
     pred_index = []
 
     for i, input in enumerate(inputs):
-      assert 'named_entity' in input
+      assert 'named_entity' in input and 'pos' in input
       # Find all indices of spaces
       space_indices = [m.start() for m in re.finditer(' ', input['text'])] + [len(input['text'])]
       # Find entity boundaries
+      # Specially for KMDP:
+      # Indices are found in morpheme IDs, not word-phrase IDs
       entity_embeddings_index.append([])
       for entity in input['named_entity']:
         entities.append(entity)
         entity_embeddings_index[i].append([1])
 
         assert len(space_indices) == input['word_count']
+        # Find word-phrase ID that includes entity boundary
         for m_i, m in enumerate(space_indices):
           # Largest m smaller than 'begin'
           if entity['begin'] > m:
-            entity_embeddings_index[i][-1][0] = m_i + 1
+            id = input['pos'][m_i][0]['id']
+            for morph in input['pos'][m_i]:
+              if entity['text'].startswith(morph['text']):
+                id = morph['id']
+            entity_embeddings_index[i][-1][0] = id
           # Smallest m larger than 'end'
           if entity['end'] <= m and len(entity_embeddings_index[i][-1]) == 1:
-            entity_embeddings_index[i][-1].append(m_i + 1)
+            id = input['pos'][m_i][-1]['id']
+            for morph in input['pos'][m_i]:
+              if entity['text'].startswith(morph['text']):
+                id = morph['id']
+            entity_embeddings_index[i][-1].append(id)
         assert len(entity_embeddings_index[i][-1]) == 2
 
       assert 'dependency' in input and "Input must include golden dependency"

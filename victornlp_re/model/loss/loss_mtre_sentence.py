@@ -26,14 +26,22 @@ def loss_MTRE_DP_NLL(arc_attention, inputs, **kwargs):
   if 'lengths' not in kwargs:
     lengths = torch.zeros(batch_size, dtype=torch.long).detach().to(device)
     for i, input in enumerate(inputs):
-      lengths[i] = input['word_count'] + 1
+      # lengths[i] = input['word_count'] + 1
+      lengths[i] = 1 + sum([len(wp) for wp in input['pos']])
   else:
     lengths = kwargs['lengths']
   max_length = torch.max(lengths)
 
   golden_heads = torch.zeros((batch_size, max_length, 1), dtype=torch.long).detach().to(device)
   for i, input in enumerate(inputs):
-    for j, arc in enumerate(input['dependency']):
+    tree = input['dependency']
+    new_tree = [None] * max_length
+    for arc in tree:
+      new_tree[arc['dep']] = arc
+    tree = new_tree
+    for j, arc in enumerate(tree):
+      if arc is None:
+        continue
       dep = arc['dep']
       golden_heads[i, dep, 0] = arc['head']
   

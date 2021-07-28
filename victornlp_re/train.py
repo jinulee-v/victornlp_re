@@ -27,6 +27,8 @@ from .model.loss import re_loss_fn
 from .model.run import re_run_fn
 from .tools.analyze import re_analysis_fn
 
+from .kmdp.kmdp_utils import generate_kmdp_lengths_mask
+
 def argparse_cmd_args() :
   parser = argparse.ArgumentParser(description='Train the re analysis model.')
   parser.add_argument('--config-file', type=str, default='victornlp_re/config.json')
@@ -193,8 +195,9 @@ def main():
     
     iter = tqdm(train_loader)
     for i, batch in enumerate(iter):
+      lengths, mask = generate_kmdp_lengths_mask(batch, device)
       optimizer.zero_grad()
-      loss = loss_fn(model, batch)
+      loss = loss_fn(model, batch, lengths=lengths, mask=mask)
       loss.backward()
       optimizer.step()
     
@@ -208,8 +211,9 @@ def main():
         loss = 0
         cnt = 0
         for batch in tqdm(dev_loader):
+          lengths, mask = generate_kmdp_lengths_mask(batch, device)
           cnt += len(batch)
-          loss += float(loss_fn(model, batch)) * len(batch)
+          loss += float(loss_fn(model, batch, lengths=lengths, mask=mask)) * len(batch)
         logger.info('Dev loss: %f', loss/cnt)
         if early_stopper(epoch, loss/cnt, model, 'models/' + title + '/model.pt'):
           break
@@ -222,7 +226,8 @@ def main():
       model.eval()
       for batch in tqdm(test_loader):
         # Call by reference modifies the original batch
-        run_fn(model, batch, language_config['run']) 
+        lengths, mask = generate_kmdp_lengths_mask(batch, device)
+        run_fn(model, batch, language_config['run'], lengths=lengths, mask=mask) 
       
       logger.info(accuracy(test_dataset))
       logger.info('-'*40)
