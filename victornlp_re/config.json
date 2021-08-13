@@ -60,7 +60,7 @@
       "relation_type_size": 160
     },
     "pruned-dependency": {
-      "prune": 1,
+      "prune": 2,
       "lstm_hidden_size": 256,
       "lstm_layers": 2,
       "gcn_hidden_size": 256,
@@ -70,14 +70,14 @@
   },
   "train": {
     "language": "korean",
-    "model": "mtre-sentence",
-    "loss_fn": "mtre-sentence-pretrain",
-    "run_fn": "mtre-sentence",
-    "analysis_fn": "mtre",
+    "model": "pruned-dependency",
+    "loss_fn": "nll",
+    "run_fn": "argmax",
+    "analysis_fn": "accuracy",
     "epoch": 100,
     "batch_size": 64,
     "optimizer": "adam",
-    "learning_rate": 0.05,
+    "learning_rate": 0.003,
     "device": "cuda:0",
     "early_stopping": {
       "patience": 3,

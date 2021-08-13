@@ -170,17 +170,12 @@ class PrunedDependencyRelExtract(nn.Module):
     device = next(self.parameters()).device
 
     max_length = -1
-    if 'lengths' not in kwargs:
-      lengths = torch.zeros(batch_size, dtype=torch.long, device=device).detach()
-      for i, input in enumerate(inputs):
-        length = 1 + sum([len(wp) for wp in input['pos']])
-        lengths[i] = length # DP requires [ROOT] node; index 0 is given
-        if max_length < length:
-          max_length = length
-    else:
-      lengths = kwargs['lengths']
-      assert lengths.dim()==1 and lengths.size(0) == batch_size
-      lengths = lengths.detach()
+    lengths = torch.zeros(batch_size, dtype=torch.long, device=device).detach()
+    for i, input in enumerate(inputs):
+      length = 1 + sum([len(wp) for wp in input['pos']])
+      lengths[i] = length # DP requires [ROOT] node; index 0 is given
+      if max_length < length:
+        max_length = length
     
     # Embedding
     embedded = []
@@ -257,18 +252,6 @@ class PrunedDependencyRelExtract(nn.Module):
 
     # Define mask: select tokens only involved in the pruned depedency tree
     mask = (torch.sum(adj_matrices, dim=2) > 0).float()
-    if 'mask' in kwargs:
-      # If mask is given, perform logical AND between two masks
-      mask_given = kwargs['mask']
-      duplicated_mask = []
-      for m, input in zip(mask_given, inputs):
-        for _ in range(len(input['relation'])):
-          duplicated_mask.append(m.unsqueeze(0))
-      mask_given = torch.cat(duplicated_mask, dim=0)
-
-      assert mask_given.size(0) == len(relations) and mask_given.size(1) ==  max_length
-      mask = mask_given.detach() * mask
-
     mask = mask.unsqueeze(2)
 
     # GCN-contextualized embeddings
